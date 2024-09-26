@@ -1,179 +1,124 @@
-#%%
-# imports
+from os import WCONTINUED, link, sep
+from typing import AsyncIterable
 import requests
-import json
+from bs4 import BeautifulSoup as bs
+import pandas as pd
 
-#%%
-url = 'https://economia.awesomeapi.com.br/last/USD-BRL'
-ret = requests.get(url)
+# URL base do site onde os apartamentos estão listados, com placeholder para a página
+url = 'https://www.vivareal.com.br/venda/parana/curitiba/apartamento_residencial/?pagina={}'
 
+# Inicializa a variável da página
+i = 1 
+# Faz a requisição para a primeira página e obtém o conteúdo HTML
+ret = requests.get(url.format(i))
+soup = bs(ret.text, 'html.parser')  # Adicionando o parser para o BeautifulSoup
 
-# %%
-if ret:
-    print(ret)
-else:
-    print('Falhou')
-# %%
+# Encontra todos os links de imóveis na página
+houses = soup.find_all(
+    'a', {'class': 'property-card__content-link js-card-title'})
+# Obtém a quantidade total de imóveis listados na página
+qtd_imoveis = float(soup.find('strong', {'class': 'results-summary__count'}).text.replace('.', ''))
 
-dolar = json.loads(ret.text)['USDBRL']
+# Exibe o número de imóveis encontrados
+len(houses)
 
-# %%
-print( f" 20 Dólares hoje custam {float(dolar['bid']) * 20} reais")
-# %%
+# Calcula a quantidade de páginas necessárias (36 imóveis por página)
+qtd_imoveis / 36
 
+# Seleciona o primeiro imóvel da lista
+house = houses[0]
 
-def cotacao(valor, moeda):
-    url = f'https://economia.awesomeapi.com.br/last/{moeda}'
-    #url = 'https://economia.awesomeapi.com.br/last/{}'.format(moeda)
-    ret = requests.get(url)
-    dolar = json.loads(ret.text)[moeda.replace('-','')]
-    print(
-        f"{valor} {moeda[:3]} hoje custam {float(dolar['bid']) * valor} {moeda[-3:]}")
+# Exibe o objeto do primeiro imóvel
+house
 
-
-# %%
-cotacao(20, 'USD-BRL')
-
-# %%
-cotacao(20, 'JPY-BRL')
-
-# %%
-try:
-    cotacao(20, 'Rhuan')
-except:
-    pass
-
-# %%
-try:
-    10/0
-except Exception as e:
-    print(e)
-else:
-    print("ok")
-# %%
-
-def multi_moeda(valor, moeda):
-    url = f'https://economia.awesomeapi.com.br/last/{moeda}'
-    ret = requests.get(url)
-    dolar = json.loads(ret.text)[moeda.replace('-', '')]
-    print(
-        f"{valor} {moeda[:3]} hoje custam {float(dolar['bid']) * valor} {moeda[-3:]}")
-
-
-
-# %%
-    lst_money = [
-        "USD-BRL",
-        "EUR-BRL",
-        "BTC-BRL",
-        "RPL-BRL",
-        "JPY-BRL",
+# Cria um DataFrame vazio com colunas especificadas
+df = pd.DataFrame(
+    columns=[
+        'descricao',
+        'endereco',
+        'area',
+        'quartos',
+        'wc',
+        'vagas',
+        'valor',
+        'condominio',
+        'wlink'
     ]
+)
+# Inicializa o contador de páginas
+i = 0
 
+# Loop para continuar extraindo dados até que todos os imóveis sejam coletados
+while qtd_imoveis > df.shape[0]:
+    i += 1  # Incrementa o número da página
+    print(f"valor i: {i} \t\t qtd_imoveis: {df.shape[0]}")  # Exibe o progresso
+    ret = requests.get(url.format(i))  # Faz a requisição para a página atual
+    soup = bs(ret.text, 'html.parser')  # Faz a análise do HTML da página
+    houses = soup.find_all(
+        'a', {'class': 'property-card__content-link js-card-title'})  # Encontra os imóveis
 
-multi_moeda(20, "USD-BRL")
-# %%
-
-
-def error_check(func):
-    def inner_func(*args, **kargs):
+    # Loop para extrair informações de cada imóvel
+    for house in houses:
         try:
-            func(*args, **kargs)
+            descricao = house.find('span', {'class': 'property-card__title'}).text.strip()  # Obtém a descrição
         except:
-            print(f"{func.__name__} falhou")
-    return inner_func
+            descricao = None  # Caso ocorra erro, atribui None
+        try:
+            endereco = house.find('span', {'class': 'property-card__address'}).text.strip()  # Obtém o endereço
+        except:
+            endereco = None
+        try:
+            area = house.find('span', {'class': 'js-property-card-detail-area'}).text.strip()  # Obtém a área
+        except:
+            area = None
+        try:
+            quartos = house.find('li', {'class': 'property-card__detail-room'}).span.text.strip()  # Obtém o número de quartos
+        except:
+            quartos = None
+        try:
+            wc = house.find('li', {'class': 'property-card__detail-bathroom'}).span.text.strip()  # Obtém o número de banheiros
+        except:
+            wc = None
+        try:
+            vagas = house.find('li', {'class': 'property-card__detail-garage'}).span.text.strip()  # Obtém o número de vagas
+        except:
+            vagas = None
+        try:
+            valor = house.find('div', {'class': 'property-card__price'}).p.text.strip()  # Obtém o valor do imóvel
+        except:
+            valor = None
+        try:
+            condominio = house.find('strong', {'class': 'js-condo-price'}).text.strip()  # Obtém o valor do condomínio
+        except:
+            condominio = None
+        try:
+            wlink = 'https://www.vivareal.com.br' + house['href']  # Obtém o link do imóvel
+        except:
+            wlink = None
 
+        # Adiciona os dados coletados ao DataFrame
+        df.loc[df.shape[0]] = [
+            descricao,
+            endereco,
+            area,
+            quartos,
+            wc,
+            vagas,
+            valor,
+            condominio,
+            wlink
+        ]
 
-@error_check
-def multi_moeda(valor, moeda):
-    url = f'https://economia.awesomeapi.com.br/last/{moeda}'
-    ret = requests.get(url)
-    dolar = json.loads(ret.text)[moeda.replace('-', '')]
-    print(
-        f"{valor} {moeda[:3]} hoje custam {float(dolar['bid']) * valor} {moeda[-3:]}")
+# Exibe os dados do último imóvel coletado
+print(descricao)
+print(endereco)
+print(area)
+print(quartos)
+print(wc)
+print(vagas)
+print(valor)
+print(condominio)
+print(wlink)
 
-
-#%%
-
-multi_moeda(20, "USD-BRL")
-multi_moeda(20, "EUR-BRL")
-multi_moeda(20, "BTC-BRL")
-multi_moeda(20, "RPL-BRL")
-multi_moeda(20, "JPY-BRL")
-
-
-
-
-# %%
-import backoff
-import random
-
-
-@backoff.on_exception(backoff.expo, (ConnectionAbortedError, ConnectionRefusedError, TimeoutError), max_tries=10)
-def test_func(*args, **kargs):
-    rnd = random.random()
-    print(f"""
-            RND: {rnd}
-            args: {args if args else 'sem args'}
-            kargs: {kargs if kargs else 'sem kargs'}
-        """)
-    if rnd < .2:
-        raise ConnectionAbortedError('Conexão foi finalizada')
-    elif rnd < .4:
-        raise ConnectionRefusedError('Conexão foi recusada')
-    elif rnd < .6:
-        raise TimeoutError('Tempo de espera excedido')
-    else:
-        return "OK!"
-
-
-# %%
-test_func()
-
-# %%
-test_func(42)
-
-# %%
-test_func(42, 51, nome="rhuan")
-
-
-
-#%%
-import logging
-
-#%%
-log = logging.getLogger()
-log.setLevel(logging.DEBUG)
-formatter = logging.Formatter(
-    '%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-ch = logging.StreamHandler()
-ch.setFormatter(formatter)
-log.addHandler(ch)
-
-
-
-# %%
-
-@backoff.on_exception(backoff.expo, (ConnectionAbortedError, ConnectionRefusedError, TimeoutError), max_tries=10)
-def test_func(*args, **kargs):
-    rnd = random.random()
-    log.debug(f" RND: {rnd} ")
-    log.info(f"args: {args if args else 'sem args'}")
-    log.info(f"kargs: {kargs if kargs else 'sem kargs'}")
-    if rnd < .2:
-        log.error('Conexão foi finalizada')
-        raise ConnectionAbortedError('Conexão foi finalizada')
-    elif rnd < .4:
-        log.error('Conexão foi recusada')
-        raise ConnectionRefusedError('Conexão foi recusada')
-    elif rnd < .6:
-        log.error('Tempo de espera excedido')
-        raise TimeoutError('Tempo de espera excedido')
-    else:
-        return "OK!"
-
-
-# %%
-test_func()
-
-# %%
+# Salva o DataFrame em um arquivo CSV
+df.to_csv('banco_de_imoveis.csv', sep=';', index=False)
