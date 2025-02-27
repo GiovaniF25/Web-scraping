@@ -1,124 +1,54 @@
-from os import WCONTINUED, link, sep
-from typing import AsyncIterable
 import requests
-from bs4 import BeautifulSoup as bs
+from bs4 import BeautifulSoup
 import pandas as pd
+import logging
 
-# URL base do site onde os apartamentos estão listados, com placeholder para a página
-url = 'https://www.vivareal.com.br/venda/parana/curitiba/apartamento_residencial/?pagina={}'
+BASE_URL = 'https://www.vivareal.com.br/venda/parana/curitiba/apartamento_residencial/?pagina={}'
 
-# Inicializa a variável da página
-i = 1 
-# Faz a requisição para a primeira página e obtém o conteúdo HTML
-ret = requests.get(url.format(i))
-soup = bs(ret.text, 'html.parser')  # Adicionando o parser para o BeautifulSoup
+def get_total_properties():
+    response = requests.get(BASE_URL.format(1))
+    soup = BeautifulSoup(response.text, 'html.parser')
+    total = soup.find('strong', {'class': 'results-summary__count'}).text.replace('.', '')
+    return int(total)
 
-# Encontra todos os links de imóveis na página
-houses = soup.find_all(
-    'a', {'class': 'property-card__content-link js-card-title'})
-# Obtém a quantidade total de imóveis listados na página
-qtd_imoveis = float(soup.find('strong', {'class': 'results-summary__count'}).text.replace('.', ''))
+def get_properties(page):
+    response = requests.get(BASE_URL.format(page))
+    soup = BeautifulSoup(response.text, 'html.parser')
+    return soup.find_all('a', {'class': 'property-card__content-link js-card-title'})
 
-# Exibe o número de imóveis encontrados
-len(houses)
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-# Calcula a quantidade de páginas necessárias (36 imóveis por página)
-qtd_imoveis / 36
+total_properties = get_total_properties()
+pages = (total_properties // 36) + 1
 
-# Seleciona o primeiro imóvel da lista
-house = houses[0]
+df = pd.DataFrame(columns=['descricao', 'endereco', 'area', 'quartos', 'wc', 'vagas', 'valor', 'condominio', 'wlink'])
 
-# Exibe o objeto do primeiro imóvel
-house
+for page in range(1, pages + 1):
+    logging.info(f"Coletando página {page}/{pages}")
+    properties = get_properties(page)
 
-# Cria um DataFrame vazio com colunas especificadas
-df = pd.DataFrame(
-    columns=[
-        'descricao',
-        'endereco',
-        'area',
-        'quartos',
-        'wc',
-        'vagas',
-        'valor',
-        'condominio',
-        'wlink'
-    ]
-)
-# Inicializa o contador de páginas
-i = 0
+    for prop in properties:
+        descricao = prop.find('span', {'class': 'property-card__title'})
+        endereco = prop.find('span', {'class': 'property-card__address'})
+        area = prop.find('span', {'class': 'js-property-card-detail-area'})
+        quartos = prop.find('li', {'class': 'property-card__detail-room'})
+        wc = prop.find('li', {'class': 'property-card__detail-bathroom'})
+        vagas = prop.find('li', {'class': 'property-card__detail-garage'})
+        valor = prop.find('div', {'class': 'property-card__price'})
+        condominio = prop.find('strong', {'class': 'js-condo-price'})
+        wlink = prop.get('href')
 
-# Loop para continuar extraindo dados até que todos os imóveis sejam coletados
-while qtd_imoveis > df.shape[0]:
-    i += 1  # Incrementa o número da página
-    print(f"valor i: {i} \t\t qtd_imoveis: {df.shape[0]}")  # Exibe o progresso
-    ret = requests.get(url.format(i))  # Faz a requisição para a página atual
-    soup = bs(ret.text, 'html.parser')  # Faz a análise do HTML da página
-    houses = soup.find_all(
-        'a', {'class': 'property-card__content-link js-card-title'})  # Encontra os imóveis
-
-    # Loop para extrair informações de cada imóvel
-    for house in houses:
-        try:
-            descricao = house.find('span', {'class': 'property-card__title'}).text.strip()  # Obtém a descrição
-        except:
-            descricao = None  # Caso ocorra erro, atribui None
-        try:
-            endereco = house.find('span', {'class': 'property-card__address'}).text.strip()  # Obtém o endereço
-        except:
-            endereco = None
-        try:
-            area = house.find('span', {'class': 'js-property-card-detail-area'}).text.strip()  # Obtém a área
-        except:
-            area = None
-        try:
-            quartos = house.find('li', {'class': 'property-card__detail-room'}).span.text.strip()  # Obtém o número de quartos
-        except:
-            quartos = None
-        try:
-            wc = house.find('li', {'class': 'property-card__detail-bathroom'}).span.text.strip()  # Obtém o número de banheiros
-        except:
-            wc = None
-        try:
-            vagas = house.find('li', {'class': 'property-card__detail-garage'}).span.text.strip()  # Obtém o número de vagas
-        except:
-            vagas = None
-        try:
-            valor = house.find('div', {'class': 'property-card__price'}).p.text.strip()  # Obtém o valor do imóvel
-        except:
-            valor = None
-        try:
-            condominio = house.find('strong', {'class': 'js-condo-price'}).text.strip()  # Obtém o valor do condomínio
-        except:
-            condominio = None
-        try:
-            wlink = 'https://www.vivareal.com.br' + house['href']  # Obtém o link do imóvel
-        except:
-            wlink = None
-
-        # Adiciona os dados coletados ao DataFrame
         df.loc[df.shape[0]] = [
-            descricao,
-            endereco,
-            area,
-            quartos,
-            wc,
-            vagas,
-            valor,
-            condominio,
-            wlink
+            descricao.text.strip() if descricao else None,
+            endereco.text.strip() if endereco else None,
+            area.text.strip() if area else None,
+            quartos.span.text.strip() if quartos and quartos.span else None,
+            wc.span.text.strip() if wc and wc.span else None,
+            vagas.span.text.strip() if vagas and vagas.span else None,
+            valor.p.text.strip() if valor and valor.p else None,
+            condominio.text.strip() if condominio else None,
+            f'https://www.vivareal.com.br{wlink}' if wlink else None
         ]
 
-# Exibe os dados do último imóvel coletado
-print(descricao)
-print(endereco)
-print(area)
-print(quartos)
-print(wc)
-print(vagas)
-print(valor)
-print(condominio)
-print(wlink)
-
-# Salva o DataFrame em um arquivo CSV
 df.to_csv('banco_de_imoveis.csv', sep=';', index=False)
+logging.info(f"Arquivo salvo com {df.shape[0]} imóveis coletados.")
