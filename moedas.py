@@ -1,54 +1,124 @@
 import requests
-from bs4 import BeautifulSoup
-import pandas as pd
+import json
+
+url = 'https://economia.awesomeapi.com.br/last/USD-BRL'
+ret = requests.get(url)
+
+if ret:
+    print(ret)
+else:
+    print('Falhou')
+
+dolar = json.loads(ret.text)['USDBRL']
+print(f"20 Dólares hoje custam {float(dolar['bid']) * 20} reais")
+
+def cotacao(valor, moeda):
+    url = f'https://economia.awesomeapi.com.br/last/{moeda}'
+    ret = requests.get(url)
+    dolar = json.loads(ret.text)[moeda.replace('-', '')]
+    print(f"{valor} {moeda[:3]} hoje custam {float(dolar['bid']) * valor} {moeda[-3:]}")
+
+cotacao(20, 'USD-BRL')
+cotacao(20, 'JPY-BRL')
+
+try:
+    cotacao(20, 'Rhuan')
+except:
+    pass
+
+try:
+    10 / 0
+except Exception as e:
+    print(e)
+else:
+    print("ok")
+
+def multi_moeda(valor, moeda):
+    url = f'https://economia.awesomeapi.com.br/last/{moeda}'
+    ret = requests.get(url)
+    dolar = json.loads(ret.text)[moeda.replace('-', '')]
+    print(f"{valor} {moeda[:3]} hoje custam {float(dolar['bid']) * valor} {moeda[-3:]}")
+
+lst_money = [
+    "USD-BRL",
+    "EUR-BRL",
+    "BTC-BRL",
+    "RPL-BRL",
+    "JPY-BRL",
+]
+
+multi_moeda(20, "USD-BRL")
+
+def error_check(func):
+    def inner_func(*args, **kwargs):
+        try:
+            func(*args, **kwargs)
+        except:
+            print(f"{func.__name__} falhou")
+    return inner_func
+
+@error_check
+def multi_moeda(valor, moeda):
+    url = f'https://economia.awesomeapi.com.br/last/{moeda}'
+    ret = requests.get(url)
+    dolar = json.loads(ret.text)[moeda.replace('-', '')]
+    print(f"{valor} {moeda[:3]} hoje custam {float(dolar['bid']) * valor} {moeda[-3:]}")
+
+multi_moeda(20, "USD-BRL")
+multi_moeda(20, "EUR-BRL")
+multi_moeda(20, "BTC-BRL")
+multi_moeda(20, "RPL-BRL")
+multi_moeda(20, "JPY-BRL")
+
+import backoff
+import random
+
+@backoff.on_exception(backoff.expo, (ConnectionAbortedError, ConnectionRefusedError, TimeoutError), max_tries=10)
+def test_func(*args, **kwargs):
+    rnd = random.random()
+    print(f"""
+        RND: {rnd}
+        args: {args if args else 'sem args'}
+        kwargs: {kwargs if kwargs else 'sem kwargs'}
+    """)
+    if rnd < .2:
+        raise ConnectionAbortedError('Conexão foi finalizada')
+    elif rnd < .4:
+        raise ConnectionRefusedError('Conexão foi recusada')
+    elif rnd < .6:
+        raise TimeoutError('Tempo de espera excedido')
+    else:
+        return "OK!"
+
+test_func()
+test_func(42)
+test_func(42, 51, nome="rhuan")
+
 import logging
 
-BASE_URL = 'https://www.vivareal.com.br/venda/parana/curitiba/apartamento_residencial/?pagina={}'
+log = logging.getLogger()
+log.setLevel(logging.DEBUG)
+formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+ch = logging.StreamHandler()
+ch.setFormatter(formatter)
+log.addHandler(ch)
 
-def get_total_properties():
-    response = requests.get(BASE_URL.format(1))
-    soup = BeautifulSoup(response.text, 'html.parser')
-    total = soup.find('strong', {'class': 'results-summary__count'}).text.replace('.', '')
-    return int(total)
+@backoff.on_exception(backoff.expo, (ConnectionAbortedError, ConnectionRefusedError, TimeoutError), max_tries=10)
+def test_func(*args, **kwargs):
+    rnd = random.random()
+    log.debug(f"RND: {rnd}")
+    log.info(f"args: {args if args else 'sem args'}")
+    log.info(f"kwargs: {kwargs if kwargs else 'sem kwargs'}")
+    if rnd < .2:
+        log.error('Conexão foi finalizada')
+        raise ConnectionAbortedError('Conexão foi finalizada')
+    elif rnd < .4:
+        log.error('Conexão foi recusada')
+        raise ConnectionRefusedError('Conexão foi recusada')
+    elif rnd < .6:
+        log.error('Tempo de espera excedido')
+        raise TimeoutError('Tempo de espera excedido')
+    else:
+        return "OK!"
 
-def get_properties(page):
-    response = requests.get(BASE_URL.format(page))
-    soup = BeautifulSoup(response.text, 'html.parser')
-    return soup.find_all('a', {'class': 'property-card__content-link js-card-title'})
-
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-
-total_properties = get_total_properties()
-pages = (total_properties // 36) + 1
-
-df = pd.DataFrame(columns=['descricao', 'endereco', 'area', 'quartos', 'wc', 'vagas', 'valor', 'condominio', 'wlink'])
-
-for page in range(1, pages + 1):
-    logging.info(f"Coletando página {page}/{pages}")
-    properties = get_properties(page)
-
-    for prop in properties:
-        descricao = prop.find('span', {'class': 'property-card__title'})
-        endereco = prop.find('span', {'class': 'property-card__address'})
-        area = prop.find('span', {'class': 'js-property-card-detail-area'})
-        quartos = prop.find('li', {'class': 'property-card__detail-room'})
-        wc = prop.find('li', {'class': 'property-card__detail-bathroom'})
-        vagas = prop.find('li', {'class': 'property-card__detail-garage'})
-        valor = prop.find('div', {'class': 'property-card__price'})
-        condominio = prop.find('strong', {'class': 'js-condo-price'})
-        wlink = prop.get('href')
-
-        df.loc[df.shape[0]] = [
-            descricao.text.strip() if descricao else None,
-            endereco.text.strip() if endereco else None,
-            area.text.strip() if area else None,
-            quartos.span.text.strip() if quartos and quartos.span else None,
-            wc.span.text.strip() if wc and wc.span else None,
-            vagas.span.text.strip() if vagas and vagas.span else None,
-            valor.p.text.strip() if valor and valor.p else None,
-            condominio.text.strip() if condominio else None,
-            f'https://www.vivareal.com.br{wlink}' if wlink else None
-        ]
-
-df.to_csv('banco_de_imoveis.csv', sep=';', index=False)
-logging.info(f"Arquivo salvo com {df.shape[0]} imóveis coletados.")
+test_func()
